@@ -1,0 +1,21 @@
+build
+mx.scratch
+!.settings
+
+# Any data dumps
+*.csv
+*.bin
+*.zip
+
+# Ignore IDE files
+.vscode
+.settings
+
+# Ignore OS files
+.DS_Store
+
+# Ignore log files
+*.log
+
+# Ignore temporary files
+*.tmp

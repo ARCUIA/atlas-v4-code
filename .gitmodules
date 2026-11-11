@@ -1,0 +1,9 @@
+[submodule "third_party/RadioLib"]
+	path = third_party/RadioLib
+	url = https://github.com/jgromes/RadioLib.git
+[submodule "third_party/lsm6dsv80x-pid"]
+	path = third_party/lsm6dsv80x-pid
+	url = https://github.com/STMicroelectronics/lsm6dsv80x-pid.git
+[submodule "third_party/lps22df-pid"]
+	path = third_party/lps22df-pid
+	url = https://github.com/STMicroelectronics/lps22df-pid.git

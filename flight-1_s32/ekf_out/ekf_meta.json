@@ -1,0 +1,52 @@
+{
+ "source": "/home/sam/Documents/arc/atlas-v4-code/flight-1_s32",
+ "window": [
+  1692.322584,
+  1952.322584
+ ],
+ "nose_body": [
+  -0.9965901471667054,
+  -0.025353246475066683,
+  0.0785193699886772
+ ],
+ "gps_mode": "off",
+ "p0_pa": 99479.03354838709,
+ "h0_gps": 222.1073820224719,
+ "events": [
+  {
+   "t": 1697.32438,
+   "name": "aligned",
+   "info": "|f|=1.0026 g, nose_b=[-1.00,-0.03,+0.08]"
+  },
+  {
+   "t": 1752.399502,
+   "name": "launch",
+   "info": "2.6 g along nose"
+  },
+  {
+   "t": 1754.358581,
+   "name": "burnout",
+   "info": "1.96 s burn"
+  },
+  {
+   "t": 1764.794986,
+   "name": "apogee",
+   "info": "871 m max altitude"
+  },
+  {
+   "t": 1767.412999,
+   "name": "shock",
+   "info": "accel at full-scale rail"
+  },
+  {
+   "t": 1928.970934,
+   "name": "shock",
+   "info": "accel at full-scale rail"
+  },
+  {
+   "t": 1931.878761,
+   "name": "landed",
+   "info": "alt at touchdown -0.9 m (closure error)"
+  }
+ ]
+}
