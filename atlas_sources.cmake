@@ -16,9 +16,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     app/core/lora_airtime.c
     app/core/gpsmsg.c
     app/core/telemetry.c
+    app/core/usbstream.c
     app/telemetry_sources.c
     app/gps_beacon.c
     app/app_isr.c
+    app/usb_stream.c
 
     devices/devices.c
     devices/spi_dev.c

@@ -24,7 +24,8 @@ def load_flight(d: str):
     out["baro_t"] = b["t_s"].to_numpy()
     out["baro_p"] = b["pressure_pa"].to_numpy()
     g = pd.read_csv(os.path.join(d, "gps.csv"), usecols=[
-        "t_s", "fix_type", "num_sv", "hmsl_m", "vel_d_mps", "vacc_m", "sacc_mps"])
+        "t_s", "fix_type", "num_sv", "hmsl_m", "vel_d_mps", "vacc_m", "sacc_mps",
+        "lat_deg", "lon_deg", "hacc_m"])
     out["gps_t"] = g["t_s"].to_numpy()
     out["gps_fix"] = g["fix_type"].to_numpy()
     out["gps_nsv"] = g["num_sv"].to_numpy()
@@ -32,6 +33,9 @@ def load_flight(d: str):
     out["gps_vd"] = g["vel_d_mps"].to_numpy()
     out["gps_vacc"] = g["vacc_m"].to_numpy()
     out["gps_sacc"] = g["sacc_mps"].to_numpy()
+    out["gps_lat"] = g["lat_deg"].to_numpy()
+    out["gps_lon"] = g["lon_deg"].to_numpy()
+    out["gps_hacc"] = g["hacc_m"].to_numpy()
     return out
 
 

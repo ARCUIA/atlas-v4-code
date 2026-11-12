@@ -259,6 +259,7 @@ class Config:
     static_updates_every: int = 10  # PAD: aiding at ~ODR/10
     bench: bool = False             # never leave PAD (live viewer on a desk)
     tilt_sigma: float = 0.03
+    max_dt: float = 0.05            # longest IMU gap integrated; raise for slow text streams
 
 
 class FlightFilter:
@@ -325,8 +326,8 @@ class FlightFilter:
 
         dt = t - self._t_prev
         self._t_prev = t
-        if not (1e-5 < dt < 0.05):
-            dt = min(max(dt, 1e-4), 0.05)
+        if not (1e-5 < dt < c.max_dt):
+            dt = min(max(dt, 1e-4), c.max_dt)
         scale = c.shock_accel_scale if t < self._shock_until else 1.0
         if self.phase == "BOOST" or (self.phase == "COAST" and t < self._baro_lock_until):
             scale = max(scale, c.boost_accel_scale)
@@ -404,8 +405,9 @@ class FlightFilter:
         static = near_1g and abs(fa/G0 - 1.0) < 0.05 and np.linalg.norm(w - k.bg) < 3*D2R
         if near_1g:
             ok, nis = k.update_tilt(f, c.tilt_sigma)
-        if static:
+        if static or c.bench:             # bench: the board is on a desk, never translating
             k.update_zupt()
+        if static:
             k.update_gyro_static(w)
 
     # --- barometer: pressure in Pa

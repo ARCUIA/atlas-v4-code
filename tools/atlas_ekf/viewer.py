@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Atlas orientation viewer: offline playback of an EKF run, or live raw IMU stream.
+"""Atlas orientation viewer (matplotlib): OFFLINE playback of an EKF run.
+
+For LIVE use atlas_live.py (tabs, raw plots, GPS/altitude, reads the new text stream). The
+--port / --replay options below are the older single-window live path and use an obsolete CSV-ish
+line format; keep them only for quick matplotlib-only tests.
+
 
 OFFLINE (after run_offline.py):
     python3 viewer.py --offline flight-1_csv/ekf_out

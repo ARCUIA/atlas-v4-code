@@ -42,6 +42,7 @@
 #include "telemetry.h"
 #include "telemetry_sources.h"
 #include "gps_beacon.h"
+#include "usb_stream.h"
 
 /* USER CODE END Includes */
 
@@ -131,6 +132,7 @@ int main(void)
   HAL_Delay(20);          /* let the sensors finish power-up */
   time_init();            /* initialize the time service */
   dump_init();             /* initialize the dump service */
+  usb_stream_init();       /* live-viewer text stream over USB CDC (see app/usb_stream.h) */
   st_imu  = imu_init();
   st_baro = baro_init();
   st_sd = sd_init(&sdi);
@@ -164,14 +166,17 @@ int main(void)
     if (imu_poll(&imu) == DEV_OK) {
       uint8_t fl = (uint8_t)((imu.n_xl != pxl) | ((imu.n_hg != phg) << 1) | ((imu.n_gy != pgy) << 2));
       log_imu(&imu, fl);
+      if (usb_stream_active()) usb_stream_imu(time_us(), &imu);
     }
-    if (baro_poll(&baro) == DEV_OK)
+    if (baro_poll(&baro) == DEV_OK) {
       log_baro(&baro);
+      if (usb_stream_active()) usb_stream_baro(time_us(), &baro);
+    }
 
     if (now - last_status >= 1000u) { last_status = now; log_status(); }
 
     gps_process();
-     { const uint8_t *pvt; if (gps_pop_pvt(&pvt)) log_gps(pvt); }
+     { const uint8_t *pvt; if (gps_pop_pvt(&pvt)) { log_gps(pvt); if (usb_stream_active()) usb_stream_gps(time_us(), gps_last()); } }
     gps_led_poll(now);
 
     radio_poll(now);
@@ -186,6 +191,7 @@ int main(void)
 
     log_service_poll();
     dump_poll();
+    usb_stream_poll();       /* after dump_poll(): the dump protocol has priority on the port */
 
     if (now - last_hb >= 500u) {
       last_hb = now;
@@ -200,7 +206,8 @@ int main(void)
           "IMU:%s xl[mg]=%d,%d,%d gy[mdps]=%d,%d,%d | BARO:%s %ld Pa | SD:%s LOG:%s "
           "sess=%lu next=%lu wr=%lu drop=%lu q=%lu/%lu err=%lu | "
           "GPS:%s%s fix=%u sv=%u pvt=%lu rxerr=%lu | "
-          "RADIO:%s(%d) tx=%lu fail=%lu air=%lums\r\n",
+          "RADIO:%s(%d) tx=%lu fail=%lu air=%lums | "
+          "USB:%s ln=%lu drop=%lu flush=%lu\r\n",
           dev_err_str(st_imu),
           (int)imu_xl_mg(imu.xl_raw[0]), (int)imu_xl_mg(imu.xl_raw[1]), (int)imu_xl_mg(imu.xl_raw[2]),
           (int)imu_gy_mdps(imu.gy_raw[0]), (int)imu_gy_mdps(imu.gy_raw[1]), (int)imu_gy_mdps(imu.gy_raw[2]),
@@ -214,9 +221,12 @@ int main(void)
           (unsigned long)gps_pvt_count(), (unsigned long)gps_error_count(),
           radio_status_text(), (int)radio_stats()->init_state, (unsigned long)radio_stats()->tx_ok,
           (unsigned long)(radio_stats()->tx_fail + radio_stats()->tx_timeout),
-          (unsigned long)(radio_stats()->last_airtime_us / 1000u));
+          (unsigned long)(radio_stats()->last_airtime_us / 1000u),
+          usb_stream_active() ? "OK" : "IDLE",
+          (unsigned long)usb_stream_stats()->lines, (unsigned long)usb_stream_stats()->lines_dropped,
+          (unsigned long)usb_stream_stats()->bytes_flushed);
       if (n > 0)
-        CDC_Transmit_FS((uint8_t *)line, (uint16_t)(n < (int)sizeof line ? n : (int)sizeof line - 1));
+        usb_stream_text(line, n < (int)sizeof line ? n : (int)sizeof line - 1);
     }
 
   }

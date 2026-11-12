@@ -1,70 +1,68 @@
-# Atlas v4 EKF prototype
+# Atlas v4 EKF + live viewer
 
-Offline error-state EKF (ESKF) on logged flight CSVs, plus a 3D orientation viewer
-that can replay a run or show a live raw-IMU stream over USB.
+* `run_offline.py`  error-state EKF over logged flight CSVs -> states, plots
+* `atlas_live.py`   **live Qt viewer**: Attitude (3D) | Raw sensors | GPS + altitude | Log
+* `viewer.py`       matplotlib playback of an EKF run (offline)
+* `stream.py`       text-stream parser, formatters, serial / replay / file sources
+* `firmware/`       `usb_stream.c/.h`: what the board should print (host-tested)
+* `eskf.py`, `flightdata.py`, `test_*.py`
 
 ## Setup (Zorin / Ubuntu 22)
     sudo apt install python3-venv python3-tk
     python3 -m venv ~/.venvs/atlas && source ~/.venvs/atlas/bin/activate
-    pip install numpy pandas matplotlib pyserial
+    pip install numpy pandas matplotlib pyserial PyQt5 pyqtgraph
+(`sudo apt install python3-pyqt5` also works if you would rather not pip it; add your user to
+`dialout` for the serial port: `sudo usermod -aG dialout $USER`, then log out/in.)
 
-## Run
-    python3 test_eskf.py                                   # synthetic sanity checks, ~5 s
-    python3 run_offline.py ~/Documents/arc/atlas-v4-code/flight-1_csv     # ~10 s for the flight window
+## Live viewer
+    python3 atlas_live.py --port auto                      # first STM32 CDC port, bench mode
+    python3 atlas_live.py --port /dev/serial/by-id/usb-STMicro...  --flight   # + launch/burnout logic
+    cat /dev/ttyACM0 > cap.txt                             # capture, then replay it later:
+    python3 atlas_live.py --text-file cap.txt              # (--line-rate N for unstamped lines)
+    python3 atlas_live.py --replay flight-1_csv --start 1745 --speed 1 --flight   # fake stream from CSVs
+Add `--fake-mag` to a replay to exercise the mag plot with SYNTHETIC data (the CSVs have no mag).
+
+Tabs: **Attitude** 3D rocket + readouts (hold still 5 s after start/"Re-align"; yaw is arbitrary without
+the mag). **Raw sensors** accel [g], gyro [deg/s], mag [uT], 3 lines each, selectable window,
+peak-preserving downsampling so spikes (ejection charge) are never decimated away.
+**GPS + altitude** horizontal track in metres from the first fix, plus baro and GPS height overlaid
+(both zeroed at start; "Re-zero alt / GPS" re-references them). **Log** non-sample lines.
+The bottom bar always shows your status line, each segment green if it starts `NAME:OK`, red if not.
+Keys: Space = pause.
+
+## What the board prints
+Keep the 1 Hz status line exactly as it is. Add timestamped sample lines in the same style:
+
+    IMU  t=1234.567890 xl[mg]=-86,-99,988 gy[mdps]=-280,210,140
+    MAG  t=1234.567890 mag[mG]=123,-45,300
+    BARO t=1234.567890 p[Pa]=98717 T[C]=21.30
+    GPS  t=1234.567890 fix=3 sv=9 lat=41.6611234 lon=-91.5301234 hmsl[m]=221.600 vd[mps]=0.100 hacc[m]=0.400 vacc[m]=0.700 sacc[mps]=0.200
+
+`t` = seconds since boot from the same clock as the SD log. Printing the status line alone still works
+but gives only host-timestamped IMU/baro and fix/sv: no GPS position, no mag, and the stream rate is
+whatever the line rate is, so the viewer labels it "legacy" and the attitude is approximate.
+
+### Firmware integration (`firmware/usb_stream.c`, not wired into your code: I do not have it)
+    usb_stream_init();                          /* after MX_USB_DEVICE_Init() */
+    usb_stream_imu (t_us, xl_mg, gy_mdps);      /* each IMU sample, from the main loop */
+    usb_stream_baro(t_us, p_pa, temp_centi_c);
+    usb_stream_mag (t_us, mag_mG);              /* when the LIS2MDL is fitted */
+    usb_stream_gps (t_us, fix, numSV, lat, lon, hMSL, velD, hAcc, vAcc, sAcc);   /* NAV-PVT units */
+    usb_stream_poll();                          /* every main-loop pass */
+    usb_stream_enable(false);                   /* before your binary dump command */
+Ring buffer, never blocks, counts dropped lines (`usb_stream_dropped()`, handy in the status line),
+fixed-point formatting only (newlib-nano has float printf off). Call the producers from one context.
+Budget: ~65 B x 455 Hz = 30 kB/s for IMU, fine for full-speed CDC; decimate the IMU lines if you like,
+the EKF just uses whatever rate arrives.
+Build check on a PC: `gcc -DUSB_STREAM_HOST_TEST -Ifirmware firmware/usb_stream.c firmware/test_usb_stream.c && ./a.out`
+
+## Offline EKF
+    python3 run_offline.py ~/Documents/arc/atlas-v4-code/flight-1_csv      # ~10 s
     python3 viewer.py --offline ~/Documents/arc/atlas-v4-code/flight-1_csv/ekf_out
-    python3 viewer.py --replay  ~/Documents/arc/atlas-v4-code/flight-1_csv --start 1740 --speed 1 --flight
-    python3 viewer.py --port /dev/serial/by-id/usb-STMicroelectronics_...   # live, bench mode
-Viewer keys: space play/pause, arrows seek (shift = 10 s), up/down speed, `e` next event,
-click the right-hand plots to seek; live: `r` re-aligns (hold still for 5 s).
+See the notes in the earlier README section of `eskf.py` docstrings; flight-1 results are in `flight1_ekf_out/`.
+Known limits: no accel scale-factor states, GPS vertical off by default (unreliable in flight), yaw
+arbitrary without mag, high-g channel unused, 455 vs 480 Hz unresolved.
 
-## Files
-| file | purpose |
-|---|---|
-| `eskf.py` | 15-state ESKF (attitude, vel, pos, accel bias, gyro bias) + flight phases. Pure numpy, no I/O. |
-| `flightdata.py` | CSV loader, rail-saturation flags, coarse launch finder |
-| `run_offline.py` | runs the filter over a window, writes `ekf_states.csv`, `ekf_updates.csv`, `ekf_meta.json`, `ekf_overview.png` |
-| `viewer.py` | offline playback / live view / replay-as-live |
-| `test_eskf.py` | rotation, alignment, static hold, synthetic flight |
-
-## How it works
-* **Frames.** Body = sensor frame. Nav = local NED at the pad. With no magnetometer yaw is arbitrary
-  (`--yaw-deg` sets it); horizontal GPS is therefore not used.
-* **Alignment.** First `align_s` (5 s) of stationary data: mean specific force gives roll/pitch and the
-  nose axis (on flight 1 the nose is **-X**), mean gyro gives the initial bias, mean pressure gives the pad reference.
-* **Predict** every IMU sample with the *measured* dt from `t_s`.
-* **Pad:** gravity-direction (tilt), zero-velocity and static gyro-bias updates.
-* **Launch** = 0.13 s mean of > 2.5 g along the nose; **burnout** = < 0.3 g; **apogee** = filter v_up crosses 0;
-  **landed** = 1 s of ~1 g, quiet gyro.
-* **Baro** is locked out from launch to burnout + 1 s, and its noise is `sqrt(s0^2 + (lag*|v|)^2)` (lag = 1.5 s),
-  because on flight 1 it read 100+ m low just after burnout.
-* **Gate** failures relax automatically (`1 + 0.25 n^2`) so a bad stretch cannot lock the filter out forever.
-* **Shock.** A sample with any raw axis >= 32760 holds the last good value and inflates accel noise x100
-  for 0.5 s (flight 1: ejection charge at t = 1767.4 s, and the event at 1929 s).
-* **Chute phase:** tilt (gravity-direction) updates again, because the airframe hangs at ~1 g.
-
-## Flight 1 result (GPS off)
-launch 1752.40 s, burnout +1.96 s, apogee detected 1764.8 s (baro pressure minimum 1764.55 s),
-peak altitude 871 m (IMU+baro, baro lags so its raw peak is 852 m), landing detected 1931.9 s.
-**There is no independent altitude reference in this data, so the 871 m is not validated.** Compare it to
-your sim / any other altimeter.
-
-## Known limits / next steps
-1. No accel scale-factor or misalignment states. Boost error is covered only by inflated process noise.
-2. GPS: only a vertical channel exists and it is off by default. In flight 1 it read ~88 m low at apogee,
-   lagged by seconds and dropped to 3-5 SVs during the burn (airborne <4 g model, burn peaks ~14 g).
-3. Yaw is unobservable without a mag. GPS-course alignment during boost is the natural next addition.
-4. The 455 Hz vs 480 Hz question (polled reads?) is unresolved. Data-ready interrupt + FIFO timestamp is the fix.
-5. High-g channel is unused (scale factor unverified).
-6. Process noise comes from pad measurements x2-3; retune from flight residuals.
-
-## Live stream protocol (firmware does not emit this yet)
-One ASCII line per sample over the USB CDC port, same units as the CSVs:
-
-    I,<t_s>,<ax_mg>,<ay_mg>,<az_mg>,<gx_mdps>,<gy_mdps>,<gz_mdps>
-    B,<t_s>,<pressure_pa>                                    (optional)
-    G,<t_s>,<fix>,<num_sv>,<hmsl_m>,<vel_d_mps>,<vacc_m>,<sacc_mps>   (optional)
-
-~55 bytes x 455 Hz = 25 kB/s, fine for full-speed CDC. Use a ring buffer and send from the main loop /
-TxCplt callback; `CDC_Transmit_FS` returns `USBD_BUSY` if called while a transfer is in flight.
-The stream must not collide with the existing dump command (which pauses logging), so give it its own mode.
-Rail detection in live mode uses |accel| >= 15.98 g and |gyro| >= 2290 dps because raw counts are not sent.
+## Tests
+    python3 test_eskf.py     # filter on synthetic flights
+    python3 test_stream.py   # parser incl. your exact status line, and C-module round trip (needs gcc)
